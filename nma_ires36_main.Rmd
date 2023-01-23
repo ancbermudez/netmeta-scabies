@@ -1,0 +1,982 @@
+---
+title: "Network Meta-Analysis of Interventions for Scabies"
+author: "Dr Amiel Nazer C. Bermudez"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+subtitle: "Itch resolution, 3-6 weeks"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+library(metafor)
+library(meta)
+library(netmeta)
+library(dplyr)
+library(dmetar)
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r, echo = FALSE, include = FALSE}
+# Load dataset 
+ires36_pairs <- read.csv("~/ires36_pairs.csv")     # Contrast format
+
+# Rename variables
+names(ires36_pairs)[names(ires36_pairs) == "X_design"] <- "design"
+names(ires36_pairs)[names(ires36_pairs) == "X_t1"] <- "t1"
+names(ires36_pairs)[names(ires36_pairs) == "X_t2"] <- "t2"
+names(ires36_pairs)[names(ires36_pairs) == "X_y"] <- "y"
+names(ires36_pairs)[names(ires36_pairs) == "X_stderr"] <- "stderr"
+names(ires36_pairs)[names(ires36_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_pairs$ycorr <- (-1)*(ires36_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_pairs <- merge(t1labels, ires36_pairs, by = "t1")
+ires36_pairs <- merge(t2labels, ires36_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_pairs <- merge(studychar, ires36_pairs, by = "study")
+
+# Obtain overall sample size
+ires36_long <- read.csv("~/ires36_v1.csv")
+sum(ires36_long$n)
+```
+
+
+# **Network meta-analysis proper**
+
+## *Network meta-analysis*
+```{r, echo = FALSE}
+ires36.nmeta <- netmeta(TE = ycorr,
+                        seTE = stderr,
+                        treat1 = t1_lab,
+                        treat2 = t2_lab,
+                        studlab = study,
+                        data = ires36_pairs,
+                        sm = "RR",
+                        fixed = FALSE,
+                        random = TRUE,
+                        reference.group = "Permethrin",
+                        details.chkmultiarm = TRUE,
+                        sep.trts = " vs ")
+ires36.nmeta
+```
+
+## *All pairwise comparisons*
+```{r, echo = FALSE}
+pair.ires36 <- netpairwise(ires36.nmeta, random = TRUE)
+forest(pair.ires36)
+```
+
+## *Total inconsistency based on the full design-by-treatment interaction random-effects model*
+```{r, echo = FALSE}
+decomp.design(ires36.nmeta)
+```
+
+### Q based on a FE model to assess consistency in the whole network, within designs, and between designs
+```{r, echo = FALSE}
+decomp.design(ires36.nmeta)$Q.decomp
+```
+
+### Design-specific decomposition of the within-designs Q of the FE model
+```{r, echo = FALSE}
+decomp.design(ires36.nmeta)$Q.het.design
+```
+
+### Between-designs Q based on RE model with tau.within estimated embedded in a full design-by-treatment interaction
+```{r, echo = FALSE}
+decomp.design(ires36.nmeta)$Q.inc.random
+```
+
+## *Network graph*
+```{r, echo = FALSE, warning = FALSE, error = FALSE, message = FALSE}
+# Create vector of node size based on sample size
+ptsize <- 30*c(0.08, 0.03, 0.31, 0.19, 0.35, 0.03)
+
+# Edge thickness based on number of studies
+netgraph(ires36.nmeta, 
+         multiarm = FALSE,
+         plastic = FALSE,
+         thickness = "number.of.studies",
+         number.of.studies = FALSE,
+         col = "#424549",
+         points = TRUE,
+         cex.points = ptsize,
+         col.points = "#ffa500")
+
+netgraph(ires36.nmeta, 
+         multiarm = FALSE,
+         plastic = FALSE,
+         thickness = "number.of.studies",
+         number.of.studies = TRUE,
+         col = "#424549",
+         points = TRUE,
+         cex.points = ptsize,
+         col.points = "#ffa500")
+```
+
+## *Direct and indirect evidence visualization*
+```{r, echo = FALSE}
+direct.evidence.plot(ires36.nmeta, random = TRUE)
+```
+
+## *League table*
+```{r, echo = FALSE}
+# Generate effect table
+netleague <- netleague(ires36.nmeta, bracket = "(", digits = 2)
+netleague
+
+# Save results
+# write.csv(netleague$random, "~/netleague.csv")
+```
+
+## *Treatment rankings*
+```{r, echo = FALSE}
+# Based on p-score
+netrank(ires36.nmeta, small.values = "bad",
+        method = "P-score", random = TRUE)
+  
+# Based on SUCRA
+set.seed(12345)
+netrank(ires36.nmeta, small.values = "bad",
+        method = "SUCRA", nsim = 10000, random = TRUE)
+
+# Rankogram
+set.seed(12345)
+rank <- rankogram(ires36.nmeta, small.values = "bad",
+                  nsim = 10000, random = TRUE, digits = 6)
+rank
+plot(rank)
+plot(rank, cumulative.rankprob = TRUE)
+```
+
+### *Obtain mean ranks by simulation*
+```{r, echo = FALSE}
+set.seed(12345)
+
+results <- list()
+
+for(i in 1:10000)
+  {
+  sim_result <- netrank(ires36.nmeta, small.values = "bad", 
+                        method = "SUCRA", random = TRUE)
+  results[[i]] <- sim_result$ranking.random
+}
+
+df <- as.data.frame(results)
+new.names <- paste0("sim", 1:10000)
+names(df) <- new.names
+
+ranks <- apply(df, 2, function(x) rank(-x, ties.method = "first"))
+means <- rowMeans(ranks)
+means
+```
+
+## *Forest plot*
+```{r, echo = FALSE}
+fplot <- forest(ires36.nmeta, 
+         reference.group = "Permethrin",
+         sortvar = TE,
+         smlab = paste("Itch resolution, 3-6 weeks \n",
+                       "Main analysis"),
+         drop.reference.group = FALSE,
+         label.left = "Favors permethrin",
+         label.right = "Favors treatment")
+```
+
+
+# **Evaluating the validity of results**
+
+## *Network heat plot, fixed-effects*
+```{r, echo = FALSE}
+netheat(ires36.nmeta, random = FALSE)
+```
+
+## *Network heat plot, random-effects*
+```{r, echo = FALSE}
+netheat(ires36.nmeta, random = TRUE)
+```
+
+## *Net splitting to check for loop-specific inconsistency*
+```{r, echo = FALSE}
+netsplit(ires36.nmeta, random = TRUE)
+netsplit(ires36.nmeta) %>% 
+  forest()
+```
+
+## *Comparison-adjusted funnel plot*
+```{r, echo = FALSE, warning = FALSE}
+funnel(ires36.nmeta, 
+       order = c("Benzyl benzoate", "Crotamiton", "Lindane", 
+                 "Oral IVM", "Permethrin", "Topical IVM"),
+       pooled = "random",
+       pch = c(1:8),
+       col = c("blue", "red", "purple", "forestgreen", "grey", 
+               "green", "black", "brown"),
+       legend = TRUE,
+       linreg = TRUE)
+```
+
+
+# **Subgroup analysis**
+
+## *By risk of bias / study quality*
+
+### Risk of bias: Low to some concerns (code: sg_robbin = 0)
+```{r, echo = FALSE}
+ires36.nmeta.rob0 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = ires36_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_robbin==0))
+ires36.nmeta.rob0
+```
+
+### Risk of bias: High (code: sg_robbin = 1)
+```{r, echo = FALSE}
+ires36.nmeta.rob1 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = ires36_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_robbin==1))
+ires36.nmeta.rob1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.rob <- netbind(ires36.nmeta.rob0, ires36.nmeta.rob1,
+                  name = c("Low / some concerns ROB", "High ROB"),
+                  col.study = c("red", "black"),
+                  col.square = c("red", "black"))
+
+forest(fp.rob,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By risk of bias"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.rob <- rma(yi = y, sei = stderr, mods = as.factor(sg_robbin), data = ires36_pairs, 
+               method = "REML", test = "knha")
+reg.rob
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_robbin == 0]))
+with(ires36_long, sum(n[sg_robbin == 1]))
+```
+
+## *By age groups*
+
+### Age group: Children (code: sg_agegrp = 1)
+```{r, echo = FALSE}
+ires36.nmeta.age1 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = ires36_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_agegrp==1))
+ires36.nmeta.age1
+```
+
+### Age group: Adults (code: sg_agegrp = 2)
+Cannot fit model due to non-conformable array
+
+### Age group: Children + Adults (code: sg_agegrp = 3)
+```{r, echo = FALSE}
+ires36.nmeta.age3 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = ires36_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_agegrp==3))
+ires36.nmeta.age3
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.age <- netbind(ires36.nmeta.age1, ires36.nmeta.age3,
+                  name = c("Children", "Children + Adults"),
+                  col.study = c("red", "blue"),
+                  col.square = c("red", "blue"))
+
+forest(fp.age,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By age group"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.age <- rma(yi = y, sei = stderr, mods = as.factor(sg_agegrp), data = ires36_pairs, 
+               method = "REML", test = "knha")
+reg.age
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_agegrp == 1]))
+with(ires36_long, sum(n[sg_agegrp == 2]))
+with(ires36_long, sum(n[sg_agegrp == 3]))
+```
+
+## *By country income*
+
+### Country income: High income (code: sg_countryinc = 1)
+```{r, echo = FALSE}
+ires36.nmeta.inc1 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = ires36_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_countryinc==1))
+ires36.nmeta.inc1
+```
+
+### Country income: Low to middle income (code: sg_countryinc = 2)
+```{r, echo = FALSE}
+ires36.nmeta.inc2 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = ires36_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_countryinc==2))
+ires36.nmeta.inc2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.inc <- netbind(ires36.nmeta.inc1, ires36.nmeta.inc2,
+                  name = c("High income", "Low to middle income"),
+                  col.study = c("red", "black"),
+                  col.square = c("red", "black"))
+
+forest(fp.inc,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By country income group"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.inc <- rma(yi = y, sei = stderr, mods = as.factor(sg_countryinc), data = ires36_pairs, 
+               method = "REML", test = "knha")
+reg.inc
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_countryinc == 1]))
+with(ires36_long, sum(n[sg_countryinc == 2]))
+```
+
+## *By confirmed versus non-confirmed parasitological diagnosis*
+
+### Parasitological diagnosis not confirmed (code: sg_paradx = 0)
+```{r, echo = FALSE}
+ires36.nmeta.paradx0 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = ires36_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (sg_paradx==0))
+ires36.nmeta.paradx0
+```
+
+### Parasitological diagnosis confirmed (code: sg_paradx = 1)
+Cannot fit model due to absence of data on comparator
+
+### Combined forest plot
+Not applicable
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.paradx <- rma(yi = y, sei = stderr, mods = as.factor(sg_paradx), data = ires36_pairs, 
+               method = "REML", test = "knha")
+reg.paradx
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_paradx == 0]))
+with(ires36_long, sum(n[sg_paradx == 1]))
+```
+
+## *By treatment of scabies prior to trial entry*
+
+### Without prior treatment of scabies (code: sg_prevtx = 0)
+```{r, echo = FALSE}
+ires36.nmeta.prevtx0 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = ires36_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (sg_prevtx==0))
+ires36.nmeta.prevtx0
+```
+
+### With prior treatment of scabies (code: sg_prevtx = 1)
+Cannot fit model due to the presence of two separate sub-networks
+
+### Combined forest plot
+Not applicable
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.prevtx <- rma(yi = y, sei = stderr, mods = as.factor(sg_prevtx), data = ires36_pairs, 
+                  method = "REML", test = "knha")
+reg.prevtx
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_prevtx == 0]))
+with(ires36_long, sum(n[sg_prevtx == 1]))
+```
+
+## *By presence of cointerventions*
+
+### Without cointerventions (code: sg_cointerv = 0)
+```{r, echo = FALSE}
+ires36.nmeta.cointerv0 <- netmeta(TE = ycorr,
+                                  seTE = stderr,
+                                  treat1 = t1_lab,
+                                  treat2 = t2_lab,
+                                  studlab = study,
+                                  data = ires36_pairs,
+                                  sm = "RR",
+                                  fixed = FALSE,
+                                  random = TRUE,
+                                  reference.group = "Permethrin",
+                                  details.chkmultiarm = TRUE,
+                                  sep.trts = " vs ",
+                                  subset = (sg_cointerv==0))
+ires36.nmeta.cointerv0
+```
+
+### With cointerventions (code: sg_cointerv = 1)
+Cannot fit model due to non-conformable arrays
+
+### Not stated (code: sg_cointerv = 2)
+```{r, echo = FALSE}
+ires36.nmeta.cointerv2 <- netmeta(TE = ycorr,
+                                  seTE = stderr,
+                                  treat1 = t1_lab,
+                                  treat2 = t2_lab,
+                                  studlab = study,
+                                  data = ires36_pairs,
+                                  sm = "RR",
+                                  fixed = FALSE,
+                                  random = TRUE,
+                                  reference.group = "Permethrin",
+                                  details.chkmultiarm = TRUE,
+                                  sep.trts = " vs ",
+                                  subset = (sg_cointerv==2))
+ires36.nmeta.cointerv2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.cointerv <- netbind(ires36.nmeta.cointerv0, ires36.nmeta.cointerv2,
+                       name = c("Without co-interventions", "Not stated"),
+                       col.study = c("red", "blue"),
+                       col.square = c("red", "blue"))
+
+forest(fp.cointerv,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By co-interventions"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.cointerv <- rma(yi = y, sei = stderr, mods = as.factor(sg_cointerv), data = ires36_pairs, 
+                  method = "REML", test = "knha")
+reg.cointerv
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_cointerv == 0]))
+with(ires36_long, sum(n[sg_cointerv == 1]))
+with(ires36_long, sum(n[sg_cointerv == 2]))
+```
+
+## *By % skin involvement*
+
+### Severity, < 50% involvement (code: sg_severebase = 0)
+```{r, echo = FALSE}
+ires36.nmeta.severebase0 <- netmeta(TE = ycorr,
+                                    seTE = stderr,
+                                    treat1 = t1_lab,
+                                    treat2 = t2_lab,
+                                    studlab = study,
+                                    data = ires36_pairs,
+                                    sm = "RR",
+                                    fixed = FALSE,
+                                    random = TRUE,
+                                    reference.group = "Permethrin",
+                                    details.chkmultiarm = TRUE,
+                                    sep.trts = " vs ",
+                                    subset = (sg_severebase==0))
+ires36.nmeta.severebase0
+```
+
+### Severity, >/= 50% involvement (code: sg_severebase = 1)
+Cannot fit model due to the presence of two separate sub-networks
+
+### Severity, unspecified (code: sg_severebase = 2)
+```{r, echo = FALSE}
+ires36.nmeta.severebase2 <- netmeta(TE = ycorr,
+                                    seTE = stderr,
+                                    treat1 = t1_lab,
+                                    treat2 = t2_lab,
+                                    studlab = study,
+                                    data = ires36_pairs,
+                                    sm = "RR",
+                                    fixed = FALSE,
+                                    random = TRUE,
+                                    reference.group = "Permethrin",
+                                    details.chkmultiarm = TRUE,
+                                    sep.trts = " vs ",
+                                    subset = (sg_severebase==2))
+ires36.nmeta.severebase2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.severebase <- netbind(ires36.nmeta.severebase0, ires36.nmeta.severebase2,
+                         name = c("< 50%", "Unspecified"),
+                         col.study = c("red", "blue"),
+                         col.square = c("red", "blue"))
+
+forest(fp.severebase,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By % skin involment"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.severebase <- rma(yi = y, sei = stderr, mods = as.factor(sg_severebase), data = ires36_pairs, 
+                      method = "REML", test = "knha")
+reg.severebase
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_severebase == 0]))
+with(ires36_long, sum(n[sg_severebase == 1]))
+with(ires36_long, sum(n[sg_severebase == 2]))
+```
+
+## *By industry funding*
+
+### Non-industry funded (code: sg_funding = 0)
+```{r, echo = FALSE, warning = FALSE}
+ires36.nmeta.funding0 <- netmeta(TE = ycorr,
+                                 seTE = stderr,
+                                 treat1 = t1_lab,
+                                 treat2 = t2_lab,
+                                 studlab = study,
+                                 data = ires36_pairs,
+                                 sm = "RR",
+                                 fixed = FALSE,
+                                 random = TRUE,
+                                 reference.group = "Permethrin",
+                                 details.chkmultiarm = TRUE,
+                                 sep.trts = " vs ",
+                                 subset = (sg_funding==0))
+ires36.nmeta.funding0
+```
+
+### Industry funded (code: sg_funding = 1)
+```{r, echo = FALSE, warning = FALSE}
+ires36.nmeta.funding1 <- netmeta(TE = ycorr,
+                                 seTE = stderr,
+                                 treat1 = t1_lab,
+                                 treat2 = t2_lab,
+                                 studlab = study,
+                                 data = ires36_pairs,
+                                 sm = "RR",
+                                 fixed = FALSE,
+                                 random = TRUE,
+                                 reference.group = "Permethrin",
+                                 details.chkmultiarm = TRUE,
+                                 sep.trts = " vs ",
+                                 subset = (sg_funding==1))
+ires36.nmeta.funding1
+```
+
+### Funding not specified (code: sg_funding = 2)
+```{r, echo = FALSE, warning = FALSE}
+ires36.nmeta.funding2 <- netmeta(TE = ycorr,
+                                 seTE = stderr,
+                                 treat1 = t1_lab,
+                                 treat2 = t2_lab,
+                                 studlab = study,
+                                 data = ires36_pairs,
+                                 sm = "RR",
+                                 fixed = FALSE,
+                                 random = TRUE,
+                                 reference.group = "Permethrin",
+                                 details.chkmultiarm = TRUE,
+                                 sep.trts = " vs ",
+                                 subset = (sg_funding==2))
+ires36.nmeta.funding2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.funding <- netbind(ires36.nmeta.funding0, ires36.nmeta.funding1, ires36.nmeta.funding2,
+                         name = c("Non-industry funded", "Industry funded", "Funding not specified"),
+                         col.study = c("red", "black","blue"),
+                         col.square = c("red", "black","blue"))
+
+forest(fp.funding,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By industry funding"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.funding <- rma(yi = y, sei = stderr, mods = as.factor(sg_funding), data = ires36_pairs, 
+                   method = "REML", test = "knha")
+reg.funding
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+with(ires36_long, sum(n[sg_funding == 0]))
+with(ires36_long, sum(n[sg_funding == 1]))
+with(ires36_long, sum(n[sg_funding == 2]))
+```
+
+
+# *Data management for sensitivity analyses*
+
+## *Best case scenario*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_bcs <- read.csv("~/ires36_bcs.csv") 
+
+# Rename variables
+names(ires36_bcs)[names(ires36_bcs) == "X_design"] <- "design"
+names(ires36_bcs)[names(ires36_bcs) == "X_t1"] <- "t1"
+names(ires36_bcs)[names(ires36_bcs) == "X_t2"] <- "t2"
+names(ires36_bcs)[names(ires36_bcs) == "X_y"] <- "y"
+names(ires36_bcs)[names(ires36_bcs) == "X_stderr"] <- "stderr"
+names(ires36_bcs)[names(ires36_bcs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_bcs$ycorr <- (-1)*(ires36_bcs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_bcs <- merge(t1labels, ires36_bcs, by = "t1")
+ires36_bcs <- merge(t2labels, ires36_bcs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_bcs <- merge(studychar, ires36_bcs, by = "study")
+
+# Obtain overall sample size
+ires_long <- read.csv("~/ires36_v1.csv")
+sum(ires_long$bcs_n)
+```
+
+## *Worst case scenario*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_wcs <- read.csv("~/ires36_wcs.csv") 
+
+# Rename variables
+names(ires36_wcs)[names(ires36_wcs) == "X_design"] <- "design"
+names(ires36_wcs)[names(ires36_wcs) == "X_t1"] <- "t1"
+names(ires36_wcs)[names(ires36_wcs) == "X_t2"] <- "t2"
+names(ires36_wcs)[names(ires36_wcs) == "X_y"] <- "y"
+names(ires36_wcs)[names(ires36_wcs) == "X_stderr"] <- "stderr"
+names(ires36_wcs)[names(ires36_wcs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_wcs$ycorr <- (-1)*(ires36_wcs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_wcs <- merge(t1labels, ires36_wcs, by = "t1")
+ires36_wcs <- merge(t2labels, ires36_wcs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_wcs <- merge(studychar, ires36_wcs, by = "study")
+
+# Obtain overall sample size
+ires_long <- read.csv("~/ires36_v1.csv")
+sum(ires_long$wcs_n)
+```
+
+## *Excludes Taplin 1990*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_pairs <- read.csv("~/ires36_pairs.csv")     # Contrast format
+
+# Rename variables
+names(ires36_pairs)[names(ires36_pairs) == "X_design"] <- "design"
+names(ires36_pairs)[names(ires36_pairs) == "X_t1"] <- "t1"
+names(ires36_pairs)[names(ires36_pairs) == "X_t2"] <- "t2"
+names(ires36_pairs)[names(ires36_pairs) == "X_y"] <- "y"
+names(ires36_pairs)[names(ires36_pairs) == "X_stderr"] <- "stderr"
+names(ires36_pairs)[names(ires36_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_pairs$ycorr <- (-1)*(ires36_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_pairs <- merge(t1labels, ires36_pairs, by = "t1")
+ires36_pairs <- merge(t2labels, ires36_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_pairs <- merge(studychar, ires36_pairs, by = "study")
+
+# Subset to exclude Taplin 1990
+ires36_pairs_con1 <- filter(ires36_pairs, study!="Taplin1990")
+
+# Obtain overall sample size
+ires36_long <- read.csv("~/ires36_v1.csv")
+ires36_long_con1 <- filter(ires36_long, study!="Taplin1990")
+sum(ires36_long_con1$n)
+```
+
+## *Includes studies with preferred itch definition*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_pairs <- read.csv("~/ires36_pairs.csv")     # Contrast format
+
+# Rename variables
+names(ires36_pairs)[names(ires36_pairs) == "X_design"] <- "design"
+names(ires36_pairs)[names(ires36_pairs) == "X_t1"] <- "t1"
+names(ires36_pairs)[names(ires36_pairs) == "X_t2"] <- "t2"
+names(ires36_pairs)[names(ires36_pairs) == "X_y"] <- "y"
+names(ires36_pairs)[names(ires36_pairs) == "X_stderr"] <- "stderr"
+names(ires36_pairs)[names(ires36_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_pairs$ycorr <- (-1)*(ires36_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_pairs <- merge(t1labels, ires36_pairs, by = "t1")
+ires36_pairs <- merge(t2labels, ires36_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_pairs <- merge(studychar, ires36_pairs, by = "study")
+
+# Subset to studies with preferred definition of itch
+ires36_pairs_itchdef <- filter(ires36_pairs, sensi_itchdef==0)
+
+# Obtain overall sample size
+ires36_long <- read.csv("~/ires36_v1.csv")
+ires36_long_itchdef <- filter(ires36_long, sensi_itchdef==0)
+sum(ires36_long_itchdef$n)
+```
+
+## *Includes studies with preferred outcome definition*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_pairs <- read.csv("~/ires36_pairs.csv")     # Contrast format
+
+# Rename variables
+names(ires36_pairs)[names(ires36_pairs) == "X_design"] <- "design"
+names(ires36_pairs)[names(ires36_pairs) == "X_t1"] <- "t1"
+names(ires36_pairs)[names(ires36_pairs) == "X_t2"] <- "t2"
+names(ires36_pairs)[names(ires36_pairs) == "X_y"] <- "y"
+names(ires36_pairs)[names(ires36_pairs) == "X_stderr"] <- "stderr"
+names(ires36_pairs)[names(ires36_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_pairs$ycorr <- (-1)*(ires36_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_pairs <- merge(t1labels, ires36_pairs, by = "t1")
+ires36_pairs <- merge(t2labels, ires36_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_pairs <- merge(studychar, ires36_pairs, by = "study")
+
+# Subset to studies with preferred outcome definition
+ires36_pairs_outcomedef <- filter(ires36_pairs, sensi_outcomedef==1)
+
+# Obtain overall sample size
+ires36_long <- read.csv("~/ires36_v1.csv")
+ires36_long_outcomedef <- filter(ires36_long, sensi_outcomedef==1)
+sum(ires36_long_outcomedef$n)
+```
+
+## *Includes studies with low / some concerns risk of bias*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_pairs <- read.csv("~/ires36_pairs.csv")     # Contrast format
+
+# Rename variables
+names(ires36_pairs)[names(ires36_pairs) == "X_design"] <- "design"
+names(ires36_pairs)[names(ires36_pairs) == "X_t1"] <- "t1"
+names(ires36_pairs)[names(ires36_pairs) == "X_t2"] <- "t2"
+names(ires36_pairs)[names(ires36_pairs) == "X_y"] <- "y"
+names(ires36_pairs)[names(ires36_pairs) == "X_stderr"] <- "stderr"
+names(ires36_pairs)[names(ires36_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_pairs$ycorr <- (-1)*(ires36_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+ires36_pairs <- merge(t1labels, ires36_pairs, by = "t1")
+ires36_pairs <- merge(t2labels, ires36_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_pairs <- merge(studychar, ires36_pairs, by = "study")
+
+# Subset to low/some concerns ROB
+ires36_pairs_rob <- filter(ires36_pairs, sg_robbin==0)
+
+# Obtain overall sample size
+ires36_long <- read.csv("~/ires36_v1.csv")
+ires36_long_rob <- filter(ires36_long, sg_robbin==0)
+sum(ires36_long_rob$n)
+```
+
+## *OIVM and PERM split dose*
+```{r, echo = FALSE}
+# Load dataset 
+ires36_pairs_splitdose <- read.csv("~/ires36_splitdose.csv") 
+
+# Rename variables
+names(ires36_pairs_splitdose)[names(ires36_pairs_splitdose) == "X_design"] <- "design"
+names(ires36_pairs_splitdose)[names(ires36_pairs_splitdose) == "X_t1"] <- "t1"
+names(ires36_pairs_splitdose)[names(ires36_pairs_splitdose) == "X_t2"] <- "t2"
+names(ires36_pairs_splitdose)[names(ires36_pairs_splitdose) == "X_y"] <- "y"
+names(ires36_pairs_splitdose)[names(ires36_pairs_splitdose) == "X_stderr"] <- "stderr"
+names(ires36_pairs_splitdose)[names(ires36_pairs_splitdose) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+ires36_pairs_splitdose$ycorr <- (-1)*(ires36_pairs_splitdose$y)
+
+# Combine with treatment labels
+t1labels_splitdose <- read.csv("~/t1labels_splitdose.csv")
+t2labels_splitdose <- read.csv("~/t2labels_splitdose.csv")
+ires36_pairs_splitdose <- merge(t1labels_splitdose, ires36_pairs_splitdose, by = "t1")
+ires36_pairs_splitdose <- merge(t2labels_splitdose, ires36_pairs_splitdose, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/ires36_v1.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+ires36_pairs_splitdose <- merge(studychar, ires36_pairs_splitdose, by = "study")
+```

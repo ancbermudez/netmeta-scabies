@@ -1,0 +1,1274 @@
+---
+title: "Network Meta-Analysis of Interventions for Scabies (Outcome: Cure, 1-2 Weeks)"
+author: "Dr Amiel Nazer C. Bermudez"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+subtitle: "Main Analysis (Revised as of 09 January 2023)"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+library(metafor)
+library(meta)
+library(netmeta)
+library(dplyr)
+library(dmetar)
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r, echo = FALSE}
+# Load dataset 
+cure_pairs <- read.csv("~/cure12_pairs.csv")     # Contrast format
+
+# Rename variables
+names(cure_pairs)[names(cure_pairs) == "X_design"] <- "design"
+names(cure_pairs)[names(cure_pairs) == "X_t1"] <- "t1"
+names(cure_pairs)[names(cure_pairs) == "X_t2"] <- "t2"
+names(cure_pairs)[names(cure_pairs) == "X_y"] <- "y"
+names(cure_pairs)[names(cure_pairs) == "X_stderr"] <- "stderr"
+names(cure_pairs)[names(cure_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+cure_pairs$ycorr <- (-1)*(cure_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+cure_pairs <- merge(t1labels, cure_pairs, by = "t1")
+cure_pairs <- merge(t2labels, cure_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/cure12_v2.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+cure_pairs <- merge(studychar, cure_pairs, by = "study")
+
+# Import dataset in long format
+cure_long <- read.csv("~/cure12_v2.csv")
+
+# Change CHA2012 to CHH2012
+cure_pairs <- mutate(cure_pairs, study = ifelse(study == "CHA2012", "CHH2012", study))
+cure_long <- mutate(cure_long, study = ifelse(study == "CHA2012", "CHH2012", study))
+```
+
+# **Network meta-analysis proper**
+
+## *Network meta-analysis*
+```{r, echo = FALSE}
+cure.nmeta <- netmeta(TE = ycorr,
+                      seTE = stderr,
+                      treat1 = t1_lab,
+                      treat2 = t2_lab,
+                      studlab = study,
+                      data = cure_pairs,
+                      sm = "RR",
+                      fixed = FALSE,
+                      random = TRUE,
+                      reference.group = "Permethrin",
+                      details.chkmultiarm = TRUE,
+                      sep.trts = " vs ")
+cure.nmeta
+```
+
+### Sample size for main analysis
+```{r, echo = FALSE}
+sum(cure_long$n)
+```
+
+## *All pairwise comparisons*
+```{r, echo = FALSE}
+pair.cure <- netpairwise(cure.nmeta, random = TRUE)
+forest(pair.cure)
+```
+
+## *Total inconsistency based on the full design-by-treatment interaction random-effects model*
+```{r, echo = FALSE}
+decomp.design(cure.nmeta)
+```
+
+### Q based on a FE model to assess consistency in the whole network, within designs, and between designs
+```{r, echo = FALSE}
+decomp.design(cure.nmeta)$Q.decomp
+```
+
+### Design-specific decomposition of the within-designs Q of the FE model
+```{r, echo = FALSE}
+decomp.design(cure.nmeta)$Q.het.design
+```
+
+### Between-designs Q based on RE model with tau.within estimated embedded in a full design-by-treatment interaction
+```{r, echo = FALSE}
+decomp.design(cure.nmeta)$Q.inc.random
+```
+
+## *Network graph*
+```{r, echo = FALSE, warning = FALSE, error = FALSE, message = FALSE}
+# Create vector of node size
+ptsize <- 1.5*c(2.33, 0.47, 3.47, 6.85, 0.36, 8.54, 0.19, 0.14, 1.37, 1.28)
+
+# Edge thickness based on number of studies
+netgraph(cure.nmeta, 
+         multiarm = FALSE,
+         plastic = FALSE,
+         thickness = "number.of.studies",
+         number.of.studies = FALSE,
+         col = "#424549",
+         points = TRUE,
+         cex.points = ptsize,
+         col.points = "#424549")
+
+netgraph(cure.nmeta, 
+         multiarm = FALSE,
+         plastic = FALSE,
+         thickness = "number.of.studies",
+         number.of.studies = TRUE,
+         col = "#424549",
+         points = TRUE,
+         cex.points = ptsize,
+         col.points = "#424549")
+  
+
+```
+
+## *Direct and indirect evidence visualization*
+```{r, echo = FALSE}
+direct.evidence.plot(cure.nmeta, random = TRUE)
+```
+
+## *League table*
+```{r, echo = FALSE}
+netleague <- netleague(cure.nmeta, bracket = "(", digits = 2)
+netleague
+
+# Save results
+# write.csv(netleague$random, "~/netleague.csv")
+```
+
+## *Treatment rankings*
+```{r, echo = FALSE}
+# Based on p-score
+netrank(cure.nmeta, small.values = "bad",
+        method = "P-score", random = TRUE)
+  
+# Based on SUCRA
+set.seed(12345)
+netrank(cure.nmeta, small.values = "bad",
+        method = "SUCRA", nsim = 10000, random = TRUE)
+
+# Rankogram
+set.seed(12345)
+rank <- rankogram(cure.nmeta, small.values = "bad",
+                 nsim = 10000, random = TRUE, digits = 6)
+rank
+plot(rank)
+plot(rank, cumulative.rankprob = TRUE)
+```
+
+### *Obtain mean ranks by simulation*
+```{r, echo = FALSE}
+set.seed(12345)
+
+results <- list()
+
+for(i in 1:10000)
+  {
+  sim_result <- netrank(cure.nmeta, small.values = "bad", 
+                        method = "SUCRA", random = TRUE)
+  results[[i]] <- sim_result$ranking.random
+}
+
+df <- as.data.frame(results)
+new.names <- paste0("sim", 1:10000)
+names(df) <- new.names
+
+ranks <- apply(df, 2, function(x) rank(-x, ties.method = "first"))
+means <- rowMeans(ranks)
+means
+```
+
+## *Forest plot*
+```{r, echo = FALSE}
+forest(cure.nmeta, 
+       reference.group = "Permethrin",
+       sortvar = TE,
+       smlab = paste("Other Treatments versus Permethrin \n",
+                     "Clinical cure"),
+       drop.reference.group = TRUE,
+       label.left = "Favors permethrin",
+       label.right = "Favors treatment")
+```
+
+
+# **Evaluating the validity of results**
+
+## *Network heat plot, fixed-effects*
+```{r, echo = FALSE}
+netheat(cure.nmeta, random = FALSE)
+```
+
+## *Network heat plot, random-effects*
+```{r, echo = FALSE}
+netheat(cure.nmeta, random = TRUE)
+```
+
+## *Net splitting to check for loop-specific inconsistency*
+```{r, echo = FALSE}
+netsplit(cure.nmeta, random = TRUE)
+netsplit(cure.nmeta) %>% 
+  forest()
+```
+
+## *Comparison-adjusted funnel plot*
+```{r, echo = FALSE}
+funnel(cure.nmeta, 
+       order = c("Benzyl benzoate", "Crotamiton", "Lindane", "Oral IVM",
+                 "Oral IVM + Permethrin", "Permethrin", "Placebo", "Pyrethrin", 
+                 "Sulfur", "Topical IVM"),
+       pooled = "random",
+       pch = c(1:4, 5, 6, 8, 15:19, 21:25),
+       col = c("blue", "red", "purple", "forestgreen", "grey", 
+              "green", "black", "brown", "orange", "pink", 
+              "khaki", "plum", "aquamarine", "sandybrown", 
+              "coral", "gold4", "#008080"),
+       legend = TRUE,
+       linreg = TRUE)       # Egger p-value is 0.9068
+```
+
+
+# **Subgroup analysis**
+
+## *By risk of bias / study quality*
+
+### Risk of bias: Low to some concerns (code: rob_bin = 0)
+```{r, echo = FALSE}
+cure.nmeta.rob0 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (rob_bin==0))
+cure.nmeta.rob0
+```
+
+### Risk of bias: High (code: rob_bin = 1)
+```{r, echo = FALSE}
+cure.nmeta.rob1 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (rob_bin==1))
+cure.nmeta.rob1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.bias <- netbind(cure.nmeta.rob0, cure.nmeta.rob1,
+                   name = c("Low/some concerns ROB", "High ROB"),
+                   col.study = c("red", "black"),
+                   col.square = c("red", "black"))
+
+forest(fp.bias,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By risk of bias"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.rob <- rma(yi = y, sei = stderr, mods = as.factor(rob_bin), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.rob
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[rob_bin == 0]))
+with(cure_long, sum(n[rob_bin == 1]))
+```
+
+## *By age groups*
+
+### Age group: Children (code: sg_agegrp = 1)
+```{r, echo = FALSE}
+cure.nmeta.age1 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (sg_agegrp==1))
+cure.nmeta.age1
+```
+
+### Age group: Adults (code: sg_agegrp = 2)
+```{r, echo = FALSE}
+cure.nmeta.age2 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (sg_agegrp==2))
+cure.nmeta.age2
+```
+
+### Age group: Mixed (code: sg_agegrp = 3)
+```{r, echo = FALSE}
+cure.nmeta.age3 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (sg_agegrp==3))
+cure.nmeta.age3
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.age <- netbind(cure.nmeta.age1, cure.nmeta.age2, cure.nmeta.age3,
+                   name = c("Children", "Adults", "Children + Adults"),
+                   col.study = c("red", "black", "blue"),
+                   col.square = c("red", "black", "blue"))
+
+forest(fp.age,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By age group"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.age <- rma(yi = y, sei = stderr, mods = as.factor(sg_agegrp), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.age
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_agegrp == 1]))
+with(cure_long, sum(n[sg_agegrp == 2]))
+with(cure_long, sum(n[sg_agegrp == 3]))
+```
+
+## *By country income*
+
+### Country income: High income (code: sg_countryinc = 1)
+```{r, echo = FALSE}
+cure.nmeta.inc1 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (sg_countryinc==1))
+cure.nmeta.inc1
+```
+
+### Country income: Low to middle income (code: sg_countryinc = 2)
+```{r, echo = FALSE}
+cure.nmeta.inc2 <- netmeta(TE = ycorr,
+                           seTE = stderr,
+                           treat1 = t1_lab,
+                           treat2 = t2_lab,
+                           studlab = study,
+                           data = cure_pairs,
+                           sm = "RR",
+                           fixed = FALSE,
+                           random = TRUE,
+                           reference.group = "Permethrin",
+                           details.chkmultiarm = TRUE,
+                           sep.trts = " vs ",
+                           subset = (sg_countryinc==2))
+cure.nmeta.inc2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.inc <- netbind(cure.nmeta.inc1, cure.nmeta.inc2, 
+                   name = c("High income", "Low/Middle income"),
+                   col.study = c("red", "black"),
+                   col.square = c("red", "black"))
+
+forest(fp.inc,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By country income"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.inc <- rma(yi = y, sei = stderr, mods = as.factor(sg_countryinc), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.inc
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_countryinc == 1]))
+with(cure_long, sum(n[sg_countryinc == 2]))
+```
+
+## *By primary versus recurrent scabies*
+
+### Primary scabies (code: sg_recur = 0)
+```{r, echo = FALSE}
+cure.nmeta.recur0 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = cure_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_recur==0))
+cure.nmeta.recur0
+```
+
+### Recurrent scabies / Not stated (code: sg_recur = 1)
+```{r, echo = FALSE}
+cure.nmeta.recur1 <- netmeta(TE = ycorr,
+                             seTE = stderr,
+                             treat1 = t1_lab,
+                             treat2 = t2_lab,
+                             studlab = study,
+                             data = cure_pairs,
+                             sm = "RR",
+                             fixed = FALSE,
+                             random = TRUE,
+                             reference.group = "Permethrin",
+                             details.chkmultiarm = TRUE,
+                             sep.trts = " vs ",
+                             subset = (sg_recur==1))
+cure.nmeta.recur1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.recur <- netbind(cure.nmeta.recur0, cure.nmeta.recur1, 
+                   name = c("Primary scabies", "Recurrent scabies/Not stated"),
+                   col.study = c("red", "black"),
+                   col.square = c("red", "black"))
+
+forest(fp.recur,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By indication"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.recur <- rma(yi = y, sei = stderr, mods = as.factor(sg_recur), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.recur
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_recur == 0]))
+with(cure_long, sum(n[sg_recur == 1]))
+```
+
+## *By confirmed versus non-confirmed parasitological diagnosis*
+
+### Parasitological diagnosis not confirmed (code: sg_paradx = 0)
+```{r, echo = FALSE}
+cure.nmeta.paradx0 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_paradx==0))
+cure.nmeta.paradx0
+```
+
+### Parasitological diagnosis confirmed (code: sg_paradx = 1)
+```{r, echo = FALSE}
+cure.nmeta.paradx1 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_paradx==1))
+cure.nmeta.paradx1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.paradx <- netbind(cure.nmeta.paradx0, cure.nmeta.paradx1, 
+                     name = c("Without parasitologic confirmation", "With parasitologic confirmation"),
+                     col.study = c("red", "black"),
+                     col.square = c("red", "black"))
+
+forest(fp.paradx,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By parasitologic confirmation"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.paradx <- rma(yi = y, sei = stderr, mods = as.factor(sg_paradx), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.paradx
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_paradx == 0]))
+with(cure_long, sum(n[sg_paradx == 1]))
+```
+
+## *By treatment of scabies prior to trial entry*
+
+### Without prior treatment of scabies (code: sg_prevtx = 0)
+```{r, echo = FALSE}
+cure.nmeta.prevtx0 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_prevtx==0))
+cure.nmeta.prevtx0
+```
+
+### With prior treatment of scabies (code: sg_prevtx = 1)
+```{r, echo = FALSE}
+cure.nmeta.prevtx1 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_prevtx==1))
+cure.nmeta.prevtx1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.prevtx <- netbind(cure.nmeta.prevtx0, cure.nmeta.prevtx1, 
+                     name = c("Without prior treatment", "With prior treatment"),
+                     col.study = c("red", "black"),
+                     col.square = c("red", "black"))
+
+forest(fp.prevtx,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By scabies treatment prior to trial entry"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.prevtx <- rma(yi = y, sei = stderr, mods = as.factor(sg_prevtx), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.prevtx
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_prevtx == 0]))
+with(cure_long, sum(n[sg_prevtx == 1]))
+```
+
+## *By simultaneous treatment of close contacts*
+
+### Unclear / No treatment of close contacts (code: sg_simultx = 0)
+```{r, echo = FALSE}
+cure.nmeta.simultx0 <- netmeta(TE = ycorr,
+                               seTE = stderr,
+                               treat1 = t1_lab,
+                               treat2 = t2_lab,
+                               studlab = study,
+                               data = cure_pairs,
+                               sm = "RR",
+                               fixed = FALSE,
+                               random = TRUE,
+                               reference.group = "Permethrin",
+                               details.chkmultiarm = TRUE,
+                               sep.trts = " vs ",
+                               subset = (sg_simultx==0))
+cure.nmeta.simultx0
+```
+
+### With treatment of close contacts (code: sg_simultx = 1)
+```{r, echo = FALSE}
+cure.nmeta.simultx1 <- netmeta(TE = ycorr,
+                               seTE = stderr,
+                               treat1 = t1_lab,
+                               treat2 = t2_lab,
+                               studlab = study,
+                               data = cure_pairs,
+                               sm = "RR",
+                               fixed = FALSE,
+                               random = TRUE,
+                               reference.group = "Permethrin",
+                               details.chkmultiarm = TRUE,
+                               sep.trts = " vs ",
+                               subset = (sg_simultx==1))
+cure.nmeta.simultx1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.simultx <- netbind(cure.nmeta.simultx0, cure.nmeta.simultx1, 
+                   name = c("Without simultaneous treatment/Unclear ", "With simultaneous treatment"),
+                   col.study = c("red", "black"),
+                   col.square = c("red", "black"))
+
+forest(fp.simultx,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By simultaneous treatment of contacts"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment",
+       labels = labels)
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.simultx <- rma(yi = y, sei = stderr, mods = as.factor(sg_simultx), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.simultx
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_simultx == 0]))
+with(cure_long, sum(n[sg_simultx == 1]))
+```
+
+## *By bacterial infection at baseline*
+
+### Without bacterial infection at baseline (code: sg_comorb = 0)
+```{r, echo = FALSE}
+cure.nmeta.comorb0 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_comorb==0))
+cure.nmeta.comorb0
+```
+
+### With bacterial infection at baseline (code: sg_comorb = 1)
+```{r, echo = FALSE}
+cure.nmeta.comorb1 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_comorb==1))
+cure.nmeta.comorb1
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.comorb <- netbind(cure.nmeta.comorb0, cure.nmeta.comorb1, 
+                   name = c("Without infection / Not specified ", "With infection"),
+                   col.study = c("red", "black"),
+                   col.square = c("red", "black"))
+
+forest(fp.comorb,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By bacterial infection at baseline"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.comorb <- rma(yi = y, sei = stderr, mods = as.factor(sg_comorb), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.comorb
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_comorb == 0]))
+with(cure_long, sum(n[sg_comorb == 1]))
+```
+
+## *By dosage*
+
+### Standard dose (code: sg_dosage = 1)
+```{r, echo = FALSE}
+cure.nmeta.dosage1 <- netmeta(TE = ycorr,
+                              seTE = stderr,
+                              treat1 = t1_lab,
+                              treat2 = t2_lab,
+                              studlab = study,
+                              data = cure_pairs,
+                              sm = "RR",
+                              fixed = FALSE,
+                              random = TRUE,
+                              reference.group = "Permethrin",
+                              details.chkmultiarm = TRUE,
+                              sep.trts = " vs ",
+                              subset = (sg_dosage==1))
+cure.nmeta.dosage1
+```
+
+### Low dose (code: sg_dosage = 2)
+Cannot fit model due to absence of observations
+
+### High dose (code: sg_dosage = 3)
+Cannot fit model due to absence of observations for reference treatment (P)
+
+### Combined forest plot
+Not applicable
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.dosage <- rma(yi = y, sei = stderr, mods = as.factor(sg_dosage), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.dosage
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_dosage == 1]))
+with(cure_long, sum(n[sg_dosage == 2]))
+with(cure_long, sum(n[sg_dosage == 3]))
+```
+
+## *By presence of co-interventions*
+
+### Without co-interventions (code: sg_cointerv = 0)
+```{r, echo = FALSE}
+cure.nmeta.cointerv0 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = cure_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (sg_cointerv==0))
+cure.nmeta.cointerv0
+```
+
+### With co-interventions (code: sg_cointerv = 1)
+```{r, echo = FALSE}
+cure.nmeta.cointerv1 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = cure_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (sg_cointerv==1))
+cure.nmeta.cointerv1
+```
+
+### Co-interventions not specified (code: sg_cointerv = 2)
+```{r, echo = FALSE}
+cure.nmeta.cointerv2 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = cure_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (sg_cointerv==2))
+cure.nmeta.cointerv2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.cointerv <- netbind(cure.nmeta.cointerv0, cure.nmeta.cointerv1, cure.nmeta.cointerv2, 
+                       name = c("Without cointeventions", "With cointerventions", "Not specified"),
+                   col.study = c("red", "black", "blue"),
+                   col.square = c("red", "black", "blue"))
+
+forest(fp.cointerv,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By presence of cointerventions"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment",
+       labels = labels)
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.cointerv <- rma(yi = y, sei = stderr, mods = as.factor(sg_cointerv), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.cointerv
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_cointerv == 0]))
+with(cure_long, sum(n[sg_cointerv == 1]))
+with(cure_long, sum(n[sg_cointerv == 2]))
+```
+
+## *By industry funding*
+
+### Non-industry funded (code: sg_funding = 0)
+```{r, echo = FALSE}
+cure.nmeta.funding0 <- netmeta(TE = ycorr,
+                               seTE = stderr,
+                               treat1 = t1_lab,
+                               treat2 = t2_lab,
+                               studlab = study,
+                               data = cure_pairs,
+                               sm = "RR",
+                               fixed = FALSE,
+                               random = TRUE,
+                               reference.group = "Permethrin",
+                               details.chkmultiarm = TRUE,
+                               sep.trts = " vs ",
+                               subset = (sg_funding==0))
+cure.nmeta.funding0
+```
+
+### Industry funded (code: sg_funding = 1)
+```{r, echo = FALSE}
+cure.nmeta.funding1 <- netmeta(TE = ycorr,
+                               seTE = stderr,
+                               treat1 = t1_lab,
+                               treat2 = t2_lab,
+                               studlab = study,
+                               data = cure_pairs,
+                               sm = "RR",
+                               fixed = FALSE,
+                               random = TRUE,
+                               reference.group = "Permethrin",
+                               details.chkmultiarm = TRUE,
+                               sep.trts = " vs ",
+                               subset = (sg_funding==1))
+cure.nmeta.funding1
+```
+
+### Funding not specified (code: sg_funding = 2)
+```{r, echo = FALSE}
+cure.nmeta.funding2 <- netmeta(TE = ycorr,
+                               seTE = stderr,
+                               treat1 = t1_lab,
+                               treat2 = t2_lab,
+                               studlab = study,
+                               data = cure_pairs,
+                               sm = "RR",
+                               fixed = FALSE,
+                               random = TRUE,
+                               reference.group = "Permethrin",
+                               details.chkmultiarm = TRUE,
+                               sep.trts = " vs ",
+                               subset = (sg_funding==2))
+cure.nmeta.funding2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.funding <- netbind(cure.nmeta.funding0, cure.nmeta.funding1, cure.nmeta.funding2, 
+                       name = c("Non-industry-funded", "Industry-funded", "Funding not specified"),
+                   col.study = c("red", "black", "blue"),
+                   col.square = c("red", "black", "blue"))
+
+forest(fp.funding,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By industry funding"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment",
+       labels = labels)
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.funding <- rma(yi = y, sei = stderr, mods = as.factor(sg_funding), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.funding
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_funding == 0]))
+with(cure_long, sum(n[sg_funding == 1]))
+with(cure_long, sum(n[sg_funding == 2]))
+```
+
+## *By cure definition*
+
+### Preferred definition (code: cure_def = 1)
+```{r, echo = FALSE}
+cure.nmeta.def1 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = cure_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (cure_def==1))
+cure.nmeta.def1
+```
+
+### Non-preferred definition (code: cure_def = 2)
+```{r, echo = FALSE}
+cure.nmeta.def2 <- netmeta(TE = ycorr,
+                                seTE = stderr,
+                                treat1 = t1_lab,
+                                treat2 = t2_lab,
+                                studlab = study,
+                                data = cure_pairs,
+                                sm = "RR",
+                                fixed = FALSE,
+                                random = TRUE,
+                                reference.group = "Permethrin",
+                                details.chkmultiarm = TRUE,
+                                sep.trts = " vs ",
+                                subset = (cure_def==2))
+cure.nmeta.def2
+```
+
+### Combined forest plot
+```{r, echo = FALSE}
+fp.def <- netbind(cure.nmeta.def1, cure.nmeta.def2, 
+                  name = c("Preferred cure definition", "Non-preferred cure definition"),
+                  col.study = c("red", "black"),
+                  col.square = c("red", "black"))
+
+forest(fp.def,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By definition of cure"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.def <- rma(yi = y, sei = stderr, mods = as.factor(cure_def), data = cure_pairs, 
+               method = "REML", test = "knha")
+reg.def
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[cure_def == 1]))
+with(cure_long, sum(n[cure_def == 2]))
+```
+
+
+# *Data management for sensitivity analyses*
+
+## *Excluding studies with high risk of bias*
+```{r, echo = FALSE}
+# Load dataset 
+cure_pairs <- read.csv("~/cure12_pairs.csv")     # Contrast format
+
+# Rename variables
+names(cure_pairs)[names(cure_pairs) == "X_design"] <- "design"
+names(cure_pairs)[names(cure_pairs) == "X_t1"] <- "t1"
+names(cure_pairs)[names(cure_pairs) == "X_t2"] <- "t2"
+names(cure_pairs)[names(cure_pairs) == "X_y"] <- "y"
+names(cure_pairs)[names(cure_pairs) == "X_stderr"] <- "stderr"
+names(cure_pairs)[names(cure_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+cure_pairs$ycorr <- (-1)*(cure_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+cure_pairs <- merge(t1labels, cure_pairs, by = "t1")
+cure_pairs <- merge(t2labels, cure_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/cure12_v2.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+cure_pairs <- merge(studychar, cure_pairs, by = "study")
+
+# Import dataset in long format
+cure_long <- read.csv("~/cure12_v2.csv")
+
+# Change CHA2012 to CHH2012
+cure_pairs <- mutate(cure_pairs, study = ifelse(study == "CHA2012", "CHH2012", study))
+cure_long <- mutate(cure_long, study = ifelse(study == "CHA2012", "CHH2012", study))
+
+# Subset to low/some concerns ROB
+cure_pairs_rob <- filter(cure_pairs, rob_bin==0)
+```
+
+## *Excluding three inconsistent loops (MIL2017, TAP1990, ABD2016, AL2018)*
+```{r, echo = FALSE}
+# Load dataset 
+cure_pairs <- read.csv("~/cure12_pairs.csv")     # Contrast format
+
+# Rename variables
+names(cure_pairs)[names(cure_pairs) == "X_design"] <- "design"
+names(cure_pairs)[names(cure_pairs) == "X_t1"] <- "t1"
+names(cure_pairs)[names(cure_pairs) == "X_t2"] <- "t2"
+names(cure_pairs)[names(cure_pairs) == "X_y"] <- "y"
+names(cure_pairs)[names(cure_pairs) == "X_stderr"] <- "stderr"
+names(cure_pairs)[names(cure_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+cure_pairs$ycorr <- (-1)*(cure_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+cure_pairs <- merge(t1labels, cure_pairs, by = "t1")
+cure_pairs <- merge(t2labels, cure_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/cure12_v2.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+cure_pairs <- merge(studychar, cure_pairs, by = "study")
+
+# Import dataset in long format
+cure_long <- read.csv("~/cure12_v2.csv")
+
+# Change CHA2012 to CHH2012
+cure_pairs <- mutate(cure_pairs, study = ifelse(study == "CHA2012", "CHH2012", study))
+cure_long <- mutate(cure_long, study = ifelse(study == "CHA2012", "CHH2012", study))
+
+# Exclude studies contributing to inconsistent loops
+cure_pairs_excl3 <- cure_pairs %>%
+  filter(study != "MIL2017", study != "TAP1990", study != "ABD2016", study != "AL2018")
+```
+
+## *Excluding two inconsistent loops (MIL2017, TAP1990)*
+```{r, echo = FALSE}
+# Load dataset 
+cure_pairs <- read.csv("~/cure12_pairs.csv")     # Contrast format
+
+# Rename variables
+names(cure_pairs)[names(cure_pairs) == "X_design"] <- "design"
+names(cure_pairs)[names(cure_pairs) == "X_t1"] <- "t1"
+names(cure_pairs)[names(cure_pairs) == "X_t2"] <- "t2"
+names(cure_pairs)[names(cure_pairs) == "X_y"] <- "y"
+names(cure_pairs)[names(cure_pairs) == "X_stderr"] <- "stderr"
+names(cure_pairs)[names(cure_pairs) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+cure_pairs$ycorr <- (-1)*(cure_pairs$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels.csv")
+t2labels <- read.csv("~/t2labels.csv")
+cure_pairs <- merge(t1labels, cure_pairs, by = "t1")
+cure_pairs <- merge(t2labels, cure_pairs, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/cure12_v2.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+cure_pairs <- merge(studychar, cure_pairs, by = "study")
+
+# Import dataset in long format
+cure_long <- read.csv("~/cure12_v2.csv")
+
+# Change CHA2012 to CHH2012
+cure_pairs <- mutate(cure_pairs, study = ifelse(study == "CHA2012", "CHH2012", study))
+cure_long <- mutate(cure_long, study = ifelse(study == "CHA2012", "CHH2012", study))
+
+# Exclude studies contributing to inconsistent loops
+cure_pairs_excl2 <- cure_pairs %>%
+  filter(study != "MIL2017", study != "TAP1990")
+```
+
+## *OIVM dose split*
+```{r, echo = FALSE}
+# Import revised dataset
+cure_pairs_ivmsplit <- read.csv("~/cure12_pairs_osplit.csv")
+
+# Rename variables
+names(cure_pairs_ivmsplit)[names(cure_pairs_ivmsplit) == "X_design"] <- "design"
+names(cure_pairs_ivmsplit)[names(cure_pairs_ivmsplit) == "X_t1"] <- "t1"
+names(cure_pairs_ivmsplit)[names(cure_pairs_ivmsplit) == "X_t2"] <- "t2"
+names(cure_pairs_ivmsplit)[names(cure_pairs_ivmsplit) == "X_y"] <- "y"
+names(cure_pairs_ivmsplit)[names(cure_pairs_ivmsplit) == "X_stderr"] <- "stderr"
+names(cure_pairs_ivmsplit)[names(cure_pairs_ivmsplit) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+cure_pairs_ivmsplit$ycorr <- (-1)*(cure_pairs_ivmsplit$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels_osplit.csv")
+t2labels <- read.csv("~/t2labels_osplit.csv")
+cure_pairs_ivmsplit <- merge(t1labels, cure_pairs_ivmsplit, by = "t1")
+cure_pairs_ivmsplit <- merge(t2labels, cure_pairs_ivmsplit, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/cure12_v2.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+cure_pairs_ivmsplit <- merge(studychar, cure_pairs_ivmsplit, by = "study")
+
+# Import dataset in long format
+# Long format for this analysis is the raw file
+cure_long <- read.csv("~/cure12_v2.csv")
+
+# Change CHA2012 to CHH2012
+cure_pairs_ivmsplit <- mutate(cure_pairs_ivmsplit, study = ifelse(study == "CHA2012", "CHH2012", study))
+cure_long <- mutate(cure_long, study = ifelse(study == "CHA2012", "CHH2012", study))
+```
+
+## *OIVM and PERM dose split*
+```{r, echo = FALSE}
+# Import revised dataset
+cure_pairs_allsplit <- read.csv("~/cure12_pairs_opsplit.csv")
+
+# Rename variables
+names(cure_pairs_allsplit)[names(cure_pairs_allsplit) == "X_design"] <- "design"
+names(cure_pairs_allsplit)[names(cure_pairs_allsplit) == "X_t1"] <- "t1"
+names(cure_pairs_allsplit)[names(cure_pairs_allsplit) == "X_t2"] <- "t2"
+names(cure_pairs_allsplit)[names(cure_pairs_allsplit) == "X_y"] <- "y"
+names(cure_pairs_allsplit)[names(cure_pairs_allsplit) == "X_stderr"] <- "stderr"
+names(cure_pairs_allsplit)[names(cure_pairs_allsplit) == "X_contrast"] <- "contrast"
+
+# Correct direction of treatment effects
+cure_pairs_allsplit$ycorr <- (-1)*(cure_pairs_allsplit$y)
+
+# Combine with treatment labels
+t1labels <- read.csv("~/t1labels_opsplit.csv")
+t2labels <- read.csv("~/t2labels_opsplit.csv")
+cure_pairs_allsplit <- merge(t1labels, cure_pairs_allsplit, by = "t1")
+cure_pairs_allsplit <- merge(t2labels, cure_pairs_allsplit, by = "t2")
+
+# Combine with study characteristics data
+studychar <- read.csv("~/cure12_long_opsplit.csv")
+studychar <- studychar[!duplicated(studychar$study), ]
+cure_pairs_allsplit <- merge(studychar, cure_pairs_allsplit, by = "study")
+
+# Import dataset in long format
+# Long format for this analysis is a separate file (cure12_long_opsplit.csv)
+cure_long <- read.csv("~/cure12_long_opsplit.csv")
+
+# Change CHA2012 to CHH2012
+cure_pairs_allsplit <- mutate(cure_pairs_allsplit, study = ifelse(study == "CHA2012", "CHH2012", study))
+cure_long <- mutate(cure_long, study = ifelse(study == "CHA2012", "CHH2012", study))
+```
