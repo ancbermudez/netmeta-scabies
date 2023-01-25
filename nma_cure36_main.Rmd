@@ -49,6 +49,9 @@ cure36_pairs <- merge(t2labels, cure36_pairs, by = "t2")
 studychar <- read.csv("~/cure36_v2.csv")
 studychar <- studychar[!duplicated(studychar$study), ]
 cure36_pairs <- merge(studychar, cure36_pairs, by = "study")
+
+# Import dataset in long format
+cure36_long <- read.csv("/Users/acbermudez/Library/CloudStorage/GoogleDrive-acbermudez@up.edu.ph/My Drive/02 CE/_individual/Rowena Genuino/nma_scabies/05 cure_36/00 datasets/cure36_v2.csv")
 ```
 
 # **Network meta-analysis proper**
@@ -68,6 +71,17 @@ cure36.nmeta <- netmeta(TE = ycorr,
                         details.chkmultiarm = TRUE,
                         sep.trts = " vs ")
 cure36.nmeta
+```
+
+### Sample size for main analysis
+```{r, echo = FALSE}
+sum(cure36_long$n)
+```
+
+## *Contribution matrix*
+```{r, echo = FALSE}
+nc <- netcontrib(cure36.nmeta)
+nc
 ```
 
 ## *All pairwise comparisons*

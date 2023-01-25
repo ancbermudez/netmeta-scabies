@@ -49,10 +49,8 @@ studychar <- read.csv("~/ires12_v3.csv")
 studychar <- studychar[!duplicated(studychar$study), ]
 ires12_pairs <- merge(studychar, ires12_pairs, by = "study")
 
-# Obtain overall sample size
+# Import dataset in long format
 ires12_long <- read.csv("~/ires12_v3.csv")
-
-sum(ires12_long$n)
 ```
 
 
@@ -73,6 +71,17 @@ ires12.nmeta <- netmeta(TE = ycorr,
                         details.chkmultiarm = TRUE,
                         sep.trts = " vs ")
 ires12.nmeta
+```
+
+### Sample size for main analysis
+```{r, echo = FALSE}
+sum(ires12_long$n)
+```
+
+## *Contribution matrix*
+```{r, echo = FALSE}
+nc <- netcontrib(ires12.nmeta)
+nc
 ```
 
 ## *All pairwise comparisons*

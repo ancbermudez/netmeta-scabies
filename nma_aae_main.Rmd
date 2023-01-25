@@ -78,6 +78,12 @@ aae.nmeta
 sum(aae_long$n)
 ```
 
+## *Contribution matrix*
+```{r, echo = FALSE}
+nc <- netcontrib(aae.nmeta)
+nc
+```
+
 ## *All pairwise comparisons*
 ```{r, echo = FALSE}
 pair.aae <- netpairwise(aae.nmeta, random = TRUE)

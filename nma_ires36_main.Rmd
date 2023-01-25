@@ -73,6 +73,17 @@ ires36.nmeta <- netmeta(TE = ycorr,
 ires36.nmeta
 ```
 
+### Sample size for main analysis
+```{r, echo = FALSE}
+sum(ires36_long$n)
+```
+
+## *Contribution matrix*
+```{r, echo = FALSE}
+nc <- netcontrib(ires36.nmeta)
+nc
+```
+
 ## *All pairwise comparisons*
 ```{r, echo = FALSE}
 pair.ires36 <- netpairwise(ires36.nmeta, random = TRUE)
