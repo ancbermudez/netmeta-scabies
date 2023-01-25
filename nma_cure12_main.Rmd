@@ -75,6 +75,12 @@ cure.nmeta <- netmeta(TE = ycorr,
 cure.nmeta
 ```
 
+## *Contribution matrix*
+```{r, echo = FALSE}
+nc <- netcontrib(cure.nmeta)
+nc
+```
+
 ### Sample size for main analysis
 ```{r, echo = FALSE}
 sum(cure_long$n)
