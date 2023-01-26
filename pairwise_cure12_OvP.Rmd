@@ -1,0 +1,145 @@
+---
+title: "Pairwise Meta-Analysis of Interventions for Scabies (Outcome: Clinical Cure, 1-2 Weeks)"
+author: "Dr Amiel Nazer C. Bermudez"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+subtitle: "Oral IVM versus Permethrin"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+library(metafor)
+library(meta)
+library(netmeta)
+library(dplyr)
+library(dmetar)
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r, echo = FALSE}
+# Load dataset 
+cure12_pair_ma <- read.csv("~/cure12_pair_OP_rev.csv")
+```
+
+# **Meta-analysis proper**
+
+## *Meta-analysis, random-effects model*
+```{r, echo = FALSE, fig.width = 9, fig.height = 9}
+# Fit model and summarise
+cure12.meta <- 
+  metabin(d.o, n.o, d.p, n.p, study, data = cure12_pair_ma,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(cure12.meta)
+
+# Forest plot
+forest(cure12.meta,
+       studylab = TRUE,
+       smlab = paste("Clinical cure, 1-2 weeks \n",
+                     "Main analysis, RE model"),
+       label.left = "Favours permethrin",
+       label.right = "Favours oral IVM")
+```
+
+
+# **Sub-group analysis**
+
+## *By parasitological confirmation of diagnosis*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(sg_paradx), tau.common = FALSE)
+```
+
+## *By scabies treatment prior to trial entry*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(sg_prevtx), tau.common = FALSE)
+```
+
+## *By dosing comparisons*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(dosecomp), tau.common = FALSE)
+```
+
+## *By presence of co-interventions*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(sg_cointerv), tau.common = FALSE)
+```
+
+## *By industry funding*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(sg_funding), tau.common = FALSE)
+```
+
+## *By timing of outcome*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(sg_outcometime), tau.common = FALSE)
+```
+
+## *By % skin involvement*
+```{r, echo = FALSE}
+update.meta(cure12.meta, subgroup = as.factor(ph_severebase), tau.common = FALSE)
+```
+
+
+# **Sensitivity Analyses**
+
+## *Fixed-effects analysis*
+```{r, echo = FALSE, fig.width = 9}
+# Fit model and summarise
+cure12.meta <- 
+  metabin(d.o, n.o, d.p, n.p, study, data = cure12_pair_ma,
+          method = "Inverse", comb.fixed = FALSE, comb.random = FALSE, sm = "RR")
+summary(cure12.meta)
+
+# Forest plot
+forest(cure12.meta,
+       studylab = TRUE,
+       smlab = paste("Clinical cure, 1-2 weeks \n",
+                     "Main analysis, FE model"),
+       label.left = "Favours permethrin",
+       label.right = "Favours oral IVM")
+```
+
+## *Excluding studies with high risk of bias*
+```{r, echo = FALSE, fig.width = 9}
+# Filter studies with low/some concerns ROB
+cure12_pair_ma_lowscrob <- filter(cure12_pair_ma, sg_robbin==0)
+
+# Fit model and summarise
+cure12.meta.lowscrob <- 
+  metabin(d.o, n.o, d.p, n.p, study, data = cure12_pair_ma_lowscrob,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(cure12.meta.lowscrob)
+
+# Forest plot
+forest(cure12.meta.lowscrob,
+       studylab = TRUE,
+       smlab = paste("Clinical cure, 1-2 weeks \n",
+                     "Excludes high ROB studies"),
+       label.left = "Favours permethrin",
+       label.right = "Favours oral IVM")
+```
+
+## *Excluding studies with non-preferred outcome definitions*
+```{r, echo = FALSE, fig.width = 9}
+# Filter studies with low/some concerns ROB
+cure12_pair_ma_curedef <- filter(cure12_pair_ma, cure_def==1)
+
+# Fit model and summarise
+cure12.meta.curedef <- 
+  metabin(d.o, n.o, d.p, n.p, study, data = cure12_pair_ma_curedef,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(cure12.meta.curedef)
+
+# Forest plot
+forest(cure12.meta.curedef,
+       studylab = TRUE,
+       smlab = paste("Clinical cure, 1-2 weeks \n",
+                     "Preferred cure definition"),
+       label.left = "Favours permethrin",
+       label.right = "Favours oral IVM")
+```

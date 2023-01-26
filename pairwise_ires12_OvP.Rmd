@@ -1,0 +1,227 @@
+---
+title: "Pairwise Meta-Analysis of Interventions for Scabies (Outcome: Itch resolution, 1-2 weeks)"
+author: "Dr Amiel Nazer C. Bermudez"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+subtitle: "Oral IVM versus Permethrin"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+library(metafor)
+library(meta)
+library(netmeta)
+library(dplyr)
+library(dmetar)
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r, echo = FALSE}
+# Load dataset for pairwise meta-analysis
+ires_ma <- read.csv("~/ires12_ma_op.csv")
+```
+
+# **Meta-analysis proper**
+
+## *Meta-analysis, random-effects model*
+```{r, echo = FALSE, fig.width = 9}
+# Fit model and summarise
+ires12.meta <- 
+  metabin(d.o, n.o, d.p, n.p, studlab, data = ires_ma,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(ires12.meta)
+
+# Forest plot
+forest(ires12.meta,
+       studylab = TRUE,
+       smlab = paste("Itch resolution, 1-2 weeks \n",
+                     "Main analysis, RE model"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+
+# **Sub-group analysis**
+
+## *By risk of bias*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_robbin), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_robbin) %>% 
+  summarise(n = sum(n))
+```
+
+## *By parasitological confirmation of diagnosis*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_paradx), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_paradx) %>% 
+  summarise(n = sum(n))
+```
+
+## *By scabies treatment prior to trial entry*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_prevtx), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_prevtx) %>% 
+  summarise(n = sum(n))
+```
+
+## *By presence of co-interventions*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_cointerv), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_cointerv) %>% 
+  summarise(n = sum(n))
+```
+
+## *By industry funding*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_funding), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_funding) %>% 
+  summarise(n = sum(n))
+```
+
+## *By % skin involvement*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_severebase), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_severebase) %>% 
+  summarise(n = sum(n))
+```
+
+## *By timing of outcome*
+```{r, echo = FALSE}
+update.meta(ires12.meta, subgroup = as.factor(sg_outcometime), tau.common = FALSE)
+```
+
+### Sample sizes per subgroup
+```{r, echo = FALSE}
+ires12_long_OP %>% 
+  group_by(sg_outcometime) %>% 
+  summarise(n = sum(n))
+```
+
+
+# **Sensitivity Analyses**
+
+## *Fixed-effects analysis*
+```{r, echo = FALSE, fig.width = 9}
+# Fit model and summarize
+ires12.meta.fe <- 
+  metabin(d.o, n.o, d.p, n.p, studlab, data = ires_ma,
+          method = "Inverse", comb.fixed = TRUE, comb.random = FALSE, sm = "RR")
+summary(ires12.meta.fe)
+
+# Forest plot
+forest(ires12.meta.fe,
+       studylab = TRUE,
+       smlab = paste("Itch resolution, 1-2 weeks \n",
+                     "Fixed-effects model"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+## *Exclude other itch definition*
+```{r, echo = FALSE, fig.width = 9}
+# Subset to studies with preferred itch definition (sensi_itchdef==0)
+ires_ma_itchdef <- filter(ires_ma, sensi_itchdef==0)
+
+# Fit model and summarize
+ires12.meta.itchdef <- 
+  metabin(d.o, n.o, d.p, n.p, studlab, data = ires_ma_itchdef,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(ires12.meta.itchdef)
+
+# Forest plot
+forest(ires12.meta.itchdef,
+       studylab = TRUE,
+       smlab = paste("Itch resolution, 1-2 weeks \n",
+                     "Preferred itch definition"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Sample sizes for sensitivity analysis
+```{r, echo = FALSE}
+with(ires12_long_OP, sum(n[sensi_itchdef == 0]))
+```
+
+## *Worst case scenario*
+```{r, echo = FALSE, fig.width = 9}
+# Fit model and summarize
+ires12.meta.wcs <- 
+  metabin(d.o.wcs, n.o.wcs, d.p.wcs, n.p.wcs, studlab, data = ires_ma,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(ires12.meta.wcs)
+
+# Forest plot
+forest(ires12.meta.wcs,
+       studylab = TRUE,
+       smlab = paste("Itch resolution, 1-2 weeks \n",
+                     "Worst case scenario"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+
+```
+
+### Sample sizes for sensitivity analysis
+```{r, echo = FALSE}
+sum(ires12_long_OP$wcs_n)
+```
+
+## *Best case scenario*
+```{r, echo = FALSE, fig.width = 9}
+# Fit model and summarize
+ires12.meta.bcs <- 
+  metabin(d.o.bcs, n.o.bcs, d.p.bcs, n.p.bcs, studlab, data = ires_ma,
+          method = "Inverse", comb.fixed = FALSE, comb.random = TRUE, sm = "RR")
+summary(ires12.meta.bcs)
+
+# Forest plot
+forest(ires12.meta.bcs,
+       studylab = TRUE,
+       smlab = paste("Itch resolution, 1-2 weeks \n",
+                     "Best case scenario"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Sample sizes for sensitivity analysis
+```{r, echo = FALSE}
+sum(ires12_long_OP$bcs_n)
+```
+
+
+
