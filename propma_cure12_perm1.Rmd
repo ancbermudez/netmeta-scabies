@@ -1,0 +1,176 @@
+---
+title: "Proportional Meta-Analysis of Baseline Cure Probabilities (1-2 Weeks) with Permethrin, Single-Dose"
+author: "Amiel Nazer C. Bermudez, MD, MPH"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+library(metafor)
+library(meta)
+library(netmeta)
+library(dplyr)
+library(dmetar)
+library(ggplot2)
+library(gridExtra)
+library(rgl)
+```
+
+```{r, echo=FALSE}
+# Load dataset 
+cure_long <- read.csv("~/cure12_long_opsplit.csv")
+
+# Subset to studies
+cure_long_perm1 <- filter(cure_long, op_split=="P1")
+```
+
+# **Main analysis**
+```{r, echo = FALSE, fig.height = 8, fig.width = 8}
+# Fit PMA model
+cure.risk.perm1 <- metaprop(d, n, studlab = study, data = cure_long_perm1,
+                            sm = "PLOGIT", method = "Inverse", method.tau = "DL", 
+                            method.incr = "only0", method.bias = "Egger",
+                            fixed = FALSE, random = TRUE, 
+                            outclab = "Cure, 1-2 weeks", complab = "Permethrin, single-dose",
+                            title = "Probability of cure")
+cure.risk.perm1
+
+# Forest plot
+forest(cure.risk.perm1, layout = "RevMan5", xlab = "% cured",
+       comb.random = TRUE, comb.fixed = FALSE, xlim = c(0,1), digits = 2, fontsize = 10,
+       test.overall.common = FALSE, test.overall.random = TRUE,
+       addrows.below.overall = 2)
+```
+
+# **Sensitivity analyses**
+
+## *Excluding studies with high risk of bias*
+```{r, echo = FALSE, fig.height = 8, fig.width = 8}
+# Filter to studies with low/some concerns risk of bias
+cure_long_perm1_lowscrob <- filter(cure_long_perm1, rob_bin==0)
+
+# Fit PMA model
+cure.risk.perm1.lowscrob <- metaprop(d, n, studlab = study, data = cure_long_perm1_lowscrob,
+                                     sm = "PLOGIT", method = "Inverse", method.tau = "DL", 
+                                     method.incr = "only0", method.bias = "Egger",
+                                     fixed = FALSE, random = TRUE, 
+                                     outclab = "Cure, 1-2 weeks", complab = "Permethrin, single-dose",
+                                     title = "Excluding studies with high ROB")
+cure.risk.perm1.lowscrob
+
+# Forest plot
+forest(cure.risk.perm1.lowscrob, layout = "RevMan5", xlab = "% cured",
+       comb.random = TRUE, comb.fixed = FALSE, xlim = c(0,1), digits = 2, fontsize = 10,
+       test.overall.common = FALSE, test.overall.random = TRUE,
+       addrows.below.overall = 2)
+```
+
+## *Excluding studies with non-preferred outcome definition*
+```{r, echo = FALSE, fig.height = 8, fig.width = 8}
+# Filter to studies with low/some concerns risk of bias
+cure_long_perm1_curedef <- filter(cure_long_perm1, cure_def==1)
+
+# Fit PMA model
+cure.risk.perm1.curedef <- metaprop(d, n, studlab = study, data = cure_long_perm1_curedef,
+                                    sm = "PLOGIT", method = "Inverse", method.tau = "DL", 
+                                    method.incr = "only0", method.bias = "Egger",
+                                    fixed = FALSE, random = TRUE, 
+                                    outclab = "Cure, 1-2 weeks", complab = "Permethrin, single-dose",
+                                    title = "Excluding studies with non-preferred outcome definitions")
+cure.risk.perm1.curedef
+
+# Forest plot
+forest(cure.risk.perm1.curedef, layout = "RevMan5", xlab = "% cured",
+       comb.random = TRUE, comb.fixed = FALSE, xlim = c(0,1), digits = 2, fontsize = 10,
+       test.overall.common = FALSE, test.overall.random = TRUE,
+       addrows.below.overall = 2)
+```
+
+## *Fixed-effects model*
+```{r, echo = FALSE, fig.height = 8, fig.width = 8}
+# Fit PMA model
+cure.risk.perm1.fe <- metaprop(d, n, studlab = study, data = cure_long_perm1,
+                              sm = "PLOGIT", method = "Inverse", method.tau = "DL", 
+                              method.incr = "only0", method.bias = "Egger",
+                              fixed = TRUE, random = FALSE, 
+                              outclab = "Cure, 1-2 weeks", complab = "Permethrin, single-dose",
+                              title = "Fixed-effects model ")
+cure.risk.perm1.fe
+
+# Forest plot
+forest(cure.risk.perm1.fe, layout = "RevMan5", xlab = "% cured",
+       comb.random = TRUE, comb.fixed = FALSE, xlim = c(0,1), digits = 2, fontsize = 10,
+       test.overall.common = FALSE, test.overall.random = TRUE,
+       addrows.below.overall = 2)
+```
+
+
+# *Subgroup analyses*
+
+## *Subgroup analysis by confirmation of parasitological diagnosis*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.paradx <- update(cure.risk.perm1, subgroup = as.factor(sg_paradx))
+sg.paradx
+forest.meta(sg.paradx, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by prior treatment for scabies*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.prevtx <- update(cure.risk.perm1, subgroup = as.factor(sg_prevtx))
+sg.prevtx
+forest.meta(sg.prevtx, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by dosing comparison*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.dosecomp <- update(cure.risk.perm1, subgroup = as.factor(dosecomp))
+sg.dosecomp
+forest.meta(sg.dosecomp, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by simultaneous treatment of contacts*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.simultx <- update(cure.risk.perm1, subgroup = as.factor(sg_simultx))
+sg.simultx
+forest.meta(sg.simultx, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by presence of cointerventions*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.cointerv <- update(cure.risk.perm1, subgroup = as.factor(sg_cointerv))
+sg.cointerv
+forest.meta(sg.cointerv, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by presence of funding source*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.funding <- update(cure.risk.perm1, subgroup = as.factor(sg_funding))
+sg.funding
+forest.meta(sg.funding, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by outcome timing*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.outcometime <- update(cure.risk.perm1, subgroup = as.factor(sg_outcometime))
+sg.outcometime
+forest.meta(sg.outcometime, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+## *Subgroup analysis by severity of baseline infestation*
+```{r, echo = FALSE, echo = FALSE, fig.height = 10, fig.width = 8}
+sg.severebase <- update(cure.risk.perm1, subgroup = as.factor(ph_severebase))
+sg.severebase
+forest.meta(sg.severebase, addrows.below.overall = 2, subgroup.hetstat = TRUE)
+```
+
+
+
+
+
