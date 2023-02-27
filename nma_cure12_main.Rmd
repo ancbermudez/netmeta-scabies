@@ -1088,6 +1088,73 @@ with(cure_long, sum(n[cure_def == 1]))
 with(cure_long, sum(n[cure_def == 2]))
 ```
 
+## *By outcome timing*
+
+### By one week (code: sg_outcometime = 1)
+```{r, echo = FALSE}
+cure.nmeta.time1 <- netmeta(TE = ycorr,
+                            seTE = stderr,
+                            treat1 = t1_lab,
+                            treat2 = t2_lab,
+                            studlab = study,
+                            data = cure_pairs,
+                            sm = "RR",
+                            fixed = FALSE,
+                            random = TRUE,
+                            reference.group = "Permethrin",
+                            details.chkmultiarm = TRUE,
+                            sep.trts = " vs ",
+                            subset = (sg_outcometime==1))
+cure.nmeta.time1
+```
+
+### By two weeks (code: sg_outcometime = 2)
+```{r, echo = FALSE}
+cure.nmeta.time2 <- netmeta(TE = ycorr,
+                            seTE = stderr,
+                            treat1 = t1_lab,
+                            treat2 = t2_lab,
+                            studlab = study,
+                            data = cure_pairs,
+                            sm = "RR",
+                            fixed = FALSE,
+                            random = TRUE,
+                            reference.group = "Permethrin",
+                            details.chkmultiarm = TRUE,
+                            sep.trts = " vs ",
+                            subset = (sg_outcometime==2))
+cure.nmeta.time2
+```
+
+### Combined forest plot
+```{r, echo = FALSE, fig.height = 6}
+fp.time <- netbind(cure.nmeta.time1, cure.nmeta.time2, 
+                   name = c("By one week", "By two weeks"),
+                   col.study = c("red", "black"),
+                   col.square = c("red", "black"))
+
+forest(fp.time,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By timing of outcome"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.time <- rma(yi = y, sei = stderr, mods = as.factor(sg_outcometime), data = cure_pairs, 
+                method = "REML", test = "knha")
+reg.time
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[sg_outcometime == 1]))
+with(cure_long, sum(n[sg_outcometime == 2]))
+```
+
 
 # *Data management for sensitivity analyses*
 
