@@ -1155,6 +1155,92 @@ with(cure_long, sum(n[sg_outcometime == 1]))
 with(cure_long, sum(n[sg_outcometime == 2]))
 ```
 
+## *By climate*
+
+### By climate = 1 (code: ph_sg_climat = 1)
+```{r, echo = FALSE}
+cure.nmeta.clim1 <- netmeta(TE = ycorr,
+                            seTE = stderr,
+                            treat1 = t1_lab,
+                            treat2 = t2_lab,
+                            studlab = study,
+                            data = cure_pairs,
+                            sm = "RR",
+                            fixed = FALSE,
+                            random = TRUE,
+                            reference.group = "Permethrin",
+                            details.chkmultiarm = TRUE,
+                            sep.trts = " vs ",
+                            subset = (ph_sg_climat==1))
+cure.nmeta.clim1
+```
+
+### By climate = 2 (code: ph_sg_climat = 2)
+Cannot fit model since the network consists of two separate sub-networks
+```{r, echo = FALSE, eval = FALSE}
+cure.nmeta.clim2 <- netmeta(TE = ycorr,
+                            seTE = stderr,
+                            treat1 = t1_lab,
+                            treat2 = t2_lab,
+                            studlab = study,
+                            data = cure_pairs,
+                            sm = "RR",
+                            fixed = FALSE,
+                            random = TRUE,
+                            reference.group = "Permethrin",
+                            details.chkmultiarm = TRUE,
+                            sep.trts = " vs ",
+                            subset = (ph_sg_climat==2))
+cure.nmeta.clim2
+```
+
+### By climate = 3 (code: ph_sg_climat = 3)
+```{r, echo = FALSE}
+cure.nmeta.clim3 <- netmeta(TE = ycorr,
+                            seTE = stderr,
+                            treat1 = t1_lab,
+                            treat2 = t2_lab,
+                            studlab = study,
+                            data = cure_pairs,
+                            sm = "RR",
+                            fixed = FALSE,
+                            random = TRUE,
+                            reference.group = "Permethrin",
+                            details.chkmultiarm = TRUE,
+                            sep.trts = " vs ",
+                            subset = (ph_sg_climat==3))
+cure.nmeta.clim3
+```
+
+### Combined forest plot
+```{r, echo = FALSE, fig.height = 6}
+fp.clim <- netbind(cure.nmeta.clim1, cure.nmeta.clim3, 
+                   name = c("clim = 1", "clim = 3"),
+                   col.study = c("red", "blue"),
+                   col.square = c("red", "blue"))
+
+forest(fp.clim,
+       col.by = "black", addrow.subgroups = TRUE,
+       fontsize = 10, spacing = 0.7, squaresize = 0.9,
+       smlab = paste("Treatments versus Permethrin \n",
+                     "By climate"),
+       label.left = "Favours permethrin",
+       label.right = "Favours treatment")
+```
+
+### Mixed-effects meta-regression
+```{r, echo = FALSE}
+reg.clim <- rma(yi = y, sei = stderr, mods = as.factor(ph_sg_climat), data = cure_pairs, 
+                method = "REML", test = "knha")
+reg.clim
+```
+
+### Sample size per subgroup
+```{r, echo = FALSE}
+with(cure_long, sum(n[ph_sg_climat == 1]))
+with(cure_long, sum(n[ph_sg_climat == 2]))
+with(cure_long, sum(n[ph_sg_climat == 3]))
+```
 
 # *Data management for sensitivity analyses*
 
